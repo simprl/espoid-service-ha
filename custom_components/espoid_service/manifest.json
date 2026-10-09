@@ -1,0 +1,13 @@
+{
+  "domain": "espoid_service",
+  "name": "ESPOID Service",
+  "codeowners": ["@simprl"],
+  "config_flow": true,
+  "dependencies": ["frontend", "http"],
+  "documentation": "https://github.com/simprl/espoid-service-ha",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/simprl/espoid-service-ha/issues",
+  "requirements": [],
+  "version": "0.1.1"
+}

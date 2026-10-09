@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Додати пристрій ESPOID",
+        "description": "Реєстрація IO node для обслуговування через Home Assistant. Режим Wi-Fi тимчасовий; звичайне керування кондиціонером залишається в Zigbee2MQTT.",
+        "data": {"name": "Назва", "base_url": "Адреса пристрою", "firmware_base_url": "Локальна URL-адреса Home Assistant", "mqtt_topic": "Топік команд Zigbee2MQTT", "check_connection": "Перевірити HTTP-з'єднання зараз"},
+        "data_description": {"base_url": "Локальна IPv4-адреса або http:// адреса ESP.", "firmware_base_url": "Необов'язково. Адреса HA, доступна ESP для завантаження прошивки, наприклад http://192.168.1.10:8123. Не VPN-адреса вашого комп'ютера.", "mqtt_topic": "Необов'язково. Повний топік /set пристрою з префіксом вашого Zigbee2MQTT.", "check_connection": "Вимкніть, якщо пристрій зараз у режимі Zigbee."}
+      }
+    },
+    "error": {"invalid_url": "Введіть локальну IPv4 HTTP-адресу без шляху, облікових даних і параметрів.", "invalid_topic": "Введіть точний MQTT-топік із закінченням /set, без шаблонів.", "invalid_name": "Введіть назву від 1 до 80 символів.", "already_configured": "Цю адресу пристрою вже зареєстровано.", "cannot_connect": "HA не має зв'язку з пристроєм. Переведіть його у Wi-Fi або вимкніть перевірку з'єднання.", "invalid_response": "Пристрій не повернув очікуваний сервісний статус IO node.", "device_rejected": "Пристрій відхилив запит.", "response_too_large": "Відповідь пристрою перевищує сервісний ліміт."}
+  },
+  "options": {
+    "step": {"init": {"title": "Налаштування обслуговування", "data": {"base_url": "Адреса пристрою", "firmware_base_url": "Локальна URL-адреса Home Assistant", "mqtt_topic": "Топік команд Zigbee2MQTT", "check_connection": "Перевірити HTTP-з'єднання зараз"}, "data_description": {"base_url": "Оновіть після зміни DHCP-адреси.", "firmware_base_url": "Необов'язкова HTTP-адреса HA, доступна ESP для локального OTA.", "mqtt_topic": "Необов'язковий точний топік /set для запиту Wi-Fi через Zigbee2MQTT.", "check_connection": "Вимкніть, якщо пристрій зараз у режимі Zigbee."}}},
+    "error": {"invalid_url": "Введіть локальну IPv4 HTTP-адресу без шляху, облікових даних і параметрів.", "invalid_topic": "Введіть точний MQTT-топік із закінченням /set, без шаблонів.", "invalid_name": "Введіть назву від 1 до 80 символів.", "already_configured": "Цю адресу пристрою вже зареєстровано.", "cannot_connect": "HA не має зв'язку з пристроєм. Переведіть його у Wi-Fi або вимкніть перевірку з'єднання.", "invalid_response": "Пристрій не повернув очікуваний сервісний статус IO node.", "device_rejected": "Пристрій відхилив запит.", "response_too_large": "Відповідь пристрою перевищує сервісний ліміт."}
+  }
+}
