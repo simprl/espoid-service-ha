@@ -24,6 +24,12 @@ class ServicePanel extends HTMLElement {
     message;
     manifestFile;
     imageFile;
+    searchOpen = false;
+    searchCidr = "";
+    search;
+    searchTimer;
+    searchPolling = false;
+    searchGeneration = 0;
     root = this.attachShadow({ mode: "open" });
     constructor() {
         super();
@@ -36,7 +42,7 @@ class ServicePanel extends HTMLElement {
                 return;
             }
             if (element.dataset.action)
-                void this.action(element.dataset.action);
+                void this.action(element.dataset.action, element.dataset.url);
         });
     }
     set hass(value) {
@@ -51,17 +57,22 @@ class ServicePanel extends HTMLElement {
     }
     connectedCallback() { this.render(); if (this.homeAssistant)
         this.start(); }
-    disconnectedCallback() { clearInterval(this.timer); this.timer = undefined; }
+    disconnectedCallback() { clearInterval(this.timer); this.timer = undefined; clearInterval(this.searchTimer); this.searchTimer = undefined; }
     t(key, values) { return translate(this.language, key, values); }
     get device() { return this.devices.find(device => device.id === this.selected); }
     path(action) { return `/api/espoid_service/devices/${encodeURIComponent(this.selected)}/${action}`; }
     async start() {
         this.timer = setInterval(() => {
-            if (!document.hidden && !this.busy)
+            if (!document.hidden && !this.busy && !this.searchOpen)
                 void this.refresh(false);
         }, 5000);
         await this.loadDevices();
-        await this.refresh(false);
+        if (this.searchOpen) {
+            await this.pollSearch();
+            this.startSearchPolling();
+        }
+        else
+            await this.refresh(false);
     }
     async request(path, options) {
         const response = await this.homeAssistant.fetchWithAuth(path, options);
@@ -88,7 +99,7 @@ class ServicePanel extends HTMLElement {
         }
     }
     async refresh(report = true) {
-        if (!this.selected || this.refreshing || !this.homeAssistant)
+        if (!this.selected || this.refreshing || !this.homeAssistant || this.searchOpen)
             return;
         this.refreshing = true;
         const id = this.selected;
@@ -135,14 +146,23 @@ class ServicePanel extends HTMLElement {
       <header>${this.iconButton("menu", "menu", "menu")}<h1>ESPOID Service</h1><div class="header-actions">
       ${this.iconButton("add", "add", "plus")}${this.iconButton("settings", "settings", "cog-outline")}</div></header>
       <main><div class="device-bar"><label for="device">${this.t("device")}</label><select id="device"></select>
-      ${this.iconButton("refresh", "refresh", "refresh")}<span id="connection" class="connection"></span></div>
+      ${this.iconButton("refresh", "refresh", "refresh")}${this.iconButton("discovery_open", "findIp", "lan-pending")}<span id="connection" class="connection"></span></div>
       <p id="address" class="address"></p><nav aria-label="ESPOID">${["status", "profile", "diagnostics", "firmware"].map(key => `<button type="button" data-tab="${key}" aria-selected="${this.tab === key}">${this.t(key)}</button>`).join("")}</nav>
       <div id="notice" role="status" class="notice" hidden></div>
       <section id="status" ${this.tab === "status" ? "" : "hidden"}>
         <div class="commands">
         ${this.button("mqtt_wifi", "wifi", "wifi")}${this.button("hold", "hold", "timer-plus-outline")}
         ${this.button("reboot_zigbee", "zigbee", "access-point")}${this.button("reboot_wifi", "reboot", "restart")}
-        ${this.button("recovery_retry", "retry", "restore")}</div><dl id="facts"></dl></section>
+        ${this.button("recovery_retry", "retry", "restore")}</div>
+        <div id="discovery" class="discovery" hidden>
+        <h2>${this.t("findIp")}</h2><label for="search-cidr">${this.t("searchNetwork")}</label>
+        <input id="search-cidr" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+        <p class="secondary">${this.t("searchSuggested")}</p>
+        <div class="toolbar">${this.button("discovery_start", "startSearch", "magnify")}
+        ${this.button("discovery_cancel", "stopSearch", "stop")}${this.button("discovery_close", "closeSearch", "close")}</div>
+        <p id="search-progress" role="status"></p><progress id="search-meter" max="1" value="0" aria-label="${this.t("searchRunning")}"></progress>
+        <h3>${this.t("searchCandidates")}</h3><p class="secondary">${this.t("identityUnverified")}</p>
+        <div id="search-results"></div></div><dl id="facts"></dl></section>
       <section id="profile" ${this.tab === "profile" ? "" : "hidden"}>
         <div class="toolbar">${this.button("read", "read", "download")}${this.button("validate", "validate", "check")}
         ${this.button("apply", "apply", "content-save-outline", 'class="primary"')}<span id="profile-source"></span></div>
@@ -169,6 +189,10 @@ class ServicePanel extends HTMLElement {
             this.profileDraft = event.target.value;
         };
         this.root.querySelector("#profile-json").value = this.profileDraft;
+        this.root.querySelector("#search-cidr").value = this.searchCidr;
+        this.root.querySelector("#search-cidr").oninput = event => {
+            this.searchCidr = event.target.value;
+        };
         this.root.querySelector("#manifest-file").onchange = event => {
             this.manifestFile = event.target.files?.[0];
         };
@@ -183,6 +207,7 @@ class ServicePanel extends HTMLElement {
         this.updateStatus();
         this.renderFirmwareOptions();
         this.updateMessage();
+        this.updateSearch();
     }
     renderDeviceOptions() {
         const select = this.root.querySelector("#device");
@@ -236,10 +261,15 @@ class ServicePanel extends HTMLElement {
             const action = button.dataset.action;
             const needsDevice = !["menu", "add", "settings", "import"].includes(action);
             button.disabled = this.busy || (needsDevice && !this.device)
+                || (this.searchOpen && needsDevice && !action.startsWith("discovery_"))
+                || (action === "discovery_open" && this.searchOpen)
+                || (action === "discovery_start" && Boolean(this.search?.busy))
+                || (action === "discovery_cancel" && this.search?.job?.state !== "running")
                 || (action === "mqtt_wifi" && !this.device?.mqtt_configured)
                 || (action === "install" && !this.firmwareId);
         }
-        this.root.querySelector("#device").disabled = this.busy;
+        this.root.querySelector("#device").disabled = this.busy || this.searchOpen;
+        this.root.querySelector("#search-cidr").disabled = this.busy || this.search?.job?.state === "running";
         this.root.querySelector("#firmware-select").disabled = this.busy;
     }
     async changeTab(tab) {
@@ -271,6 +301,68 @@ class ServicePanel extends HTMLElement {
         this.facts("firmware-facts", firmware ? [["version", firmware.version], ["size", `${firmware.artifact.size.toLocaleString(this.language)} B`], ["hash", firmware.id]] : []);
         this.updateDisabled();
     }
+    async pollSearch() {
+        if (!this.searchOpen || this.searchPolling || !this.homeAssistant)
+            return;
+        this.searchPolling = true;
+        const id = this.selected;
+        const generation = this.searchGeneration;
+        try {
+            const result = await this.json(this.path("discovery"));
+            if (this.searchOpen && this.selected === id && this.searchGeneration === generation) {
+                this.search = result;
+                this.updateSearch();
+            }
+        }
+        catch (error) {
+            if (this.searchOpen && this.searchGeneration === generation)
+                this.showError(error);
+        }
+        finally {
+            this.searchPolling = false;
+        }
+    }
+    startSearchPolling() {
+        if (!this.searchTimer)
+            this.searchTimer = setInterval(() => {
+                if (!document.hidden && !this.busy)
+                    void this.pollSearch();
+            }, 1000);
+    }
+    updateSearch() {
+        this.root.querySelector("#discovery").hidden = !this.searchOpen;
+        const job = this.search?.job;
+        const state = { running: "searchRunning", complete: "searchComplete",
+            timeout: "searchTimeout", cancelled: "searchCancelled", failed: "search_failed" };
+        this.root.querySelector("#search-progress").textContent = job
+            ? `${this.t(state[job.state] ?? "unknown")} · ${this.t("searchProgress", { checked: String(job.checked), total: String(job.total) })}`
+            : this.search?.busy ? this.t("search_busy") : "";
+        const meter = this.root.querySelector("#search-meter");
+        meter.max = job?.total || 1;
+        meter.value = job?.checked || 0;
+        const results = this.root.querySelector("#search-results");
+        results.replaceChildren();
+        for (const candidate of job?.candidates ?? []) {
+            const row = document.createElement("div");
+            row.className = "candidate";
+            const details = document.createElement("div");
+            const address = document.createElement("strong");
+            address.textContent = candidate.url;
+            const description = document.createElement("p");
+            description.textContent = [this.t(candidate.source === "stored" ? "stored" : "default"),
+                ...candidate.devices.map(device => [device.name, device.id, device.type].filter(Boolean).join(" / ")),
+                ...candidate.uart.map(bus => `UART TX ${bus.tx} / RX ${bus.rx}`)].join(" · ");
+            details.append(address, description);
+            const control = document.createElement("div");
+            control.innerHTML = this.button("discovery_apply", "useAddress", "check");
+            control.querySelector("button").dataset.url = candidate.url;
+            row.append(details, control);
+            results.append(row);
+        }
+        if (job && job.state !== "running" && !job.candidates.length)
+            results.textContent = this.t("noCandidates");
+        this.updateDisabled();
+    }
     parseProfile() {
         try {
             const profile = JSON.parse(this.profileDraft);
@@ -294,7 +386,7 @@ class ServicePanel extends HTMLElement {
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
-    async action(action) {
+    async action(action, candidateUrl) {
         if (this.busy)
             return;
         if (action === "menu") {
@@ -314,8 +406,53 @@ class ServicePanel extends HTMLElement {
         }
         this.busy = true;
         this.updateDisabled();
+        if (action.startsWith("discovery_"))
+            this.searchGeneration++;
         try {
-            if (action === "read") {
+            if (action === "discovery_open") {
+                this.searchOpen = true;
+                this.searchCidr = this.device?.discovery_cidr ?? "";
+                this.search = undefined;
+                this.root.querySelector("#search-cidr").value = this.searchCidr;
+                await this.changeTab("status");
+                this.updateSearch();
+                await this.pollSearch();
+                this.startSearchPolling();
+            }
+            else if (action === "discovery_start") {
+                if (!confirm(this.t("confirmSearch", { cidr: this.searchCidr })))
+                    return;
+                this.search = await this.json(this.path("discovery_start"), { cidr: this.searchCidr });
+                this.message = undefined;
+                this.updateSearch();
+            }
+            else if (action === "discovery_cancel" || action === "discovery_close") {
+                if (this.search?.job?.state === "running") {
+                    this.search = await this.json(this.path("discovery_cancel"), { job_id: this.search.job.id });
+                }
+                if (action === "discovery_close") {
+                    this.searchOpen = false;
+                    clearInterval(this.searchTimer);
+                    this.searchTimer = undefined;
+                }
+                this.updateSearch();
+            }
+            else if (action === "discovery_apply") {
+                if (!candidateUrl || !this.search?.job)
+                    throw new ServiceError("search_expired");
+                if (!confirm(this.t("confirmAddress", { url: candidateUrl, name: this.device.name })))
+                    return;
+                await this.json(this.path("discovery_apply"), { job_id: this.search.job.id, url: candidateUrl, confirmed: true });
+                this.searchOpen = false;
+                clearInterval(this.searchTimer);
+                this.searchTimer = undefined;
+                this.profileDraft = "";
+                this.firmwareId = "";
+                this.render();
+                await this.loadDevices();
+                this.note("addressSaved");
+            }
+            else if (action === "read") {
                 const result = await this.json(this.path("profile"));
                 this.profileDraft = result.config == null ? "" : JSON.stringify(result.config, null, 2);
                 this.root.querySelector("#profile-json").value = this.profileDraft;

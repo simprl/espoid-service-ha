@@ -8,11 +8,13 @@ from pathlib import Path
 
 from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import DeviceClient
 from .const import DOMAIN, PANEL_PATH, VERSION
 from .firmware import FirmwareLibrary
+from .discovery import DiscoveryManager
 
 
 @dataclass
@@ -33,7 +35,7 @@ async def async_setup(hass, config):
 async def async_setup_entry(hass, entry):
     data = hass.data.setdefault(DOMAIN, {
         "devices": {}, "library": FirmwareLibrary(hass.config.config_dir),
-        "setup_lock": asyncio.Lock(), "registered": False,
+        "setup_lock": asyncio.Lock(), "registered": False, "discovery": DiscoveryManager(),
     })
     async with data["setup_lock"]:
         if not data["registered"]:
@@ -43,6 +45,7 @@ async def async_setup_entry(hass, entry):
                 StaticPathConfig(f"/{DOMAIN}-static", str(Path(__file__).parent / "frontend"), False),
             ])
             register_views(hass)
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, data["discovery"].shutdown)
             data["registered"] = True
     settings = {**entry.data, **entry.options}
     data["devices"][entry.entry_id] = DeviceRuntime(
@@ -64,6 +67,7 @@ async def _async_update_entry(hass, entry):
 
 
 async def async_unload_entry(hass, entry):
+    await hass.data[DOMAIN]["discovery"].clear_entry(entry.entry_id)
     hass.data[DOMAIN]["devices"].pop(entry.entry_id, None)
     if not hass.data[DOMAIN]["devices"]:
         frontend.async_remove_panel(hass, PANEL_PATH)

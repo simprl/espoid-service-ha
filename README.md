@@ -5,6 +5,10 @@ HA itself. The browser only talks to HA; HA accesses the device's existing
 temporary Wi-Fi HTTP API. No internet, external Python installation or CDN is
 needed at runtime. Normal AC control remains in Zigbee2MQTT.
 
+Version `0.1.2` adds explicit HA-local IP search. Discovery checks use local
+fixtures, not native/customer HA qualification. The existing firmware and its
+Wi-Fi service timers are unchanged; no ESP reflash is needed for this feature.
+
 ## Installation with HACS
 
 Create and download a Home Assistant backup before installing. HACS installation
@@ -13,7 +17,7 @@ prove that downloads are reachable.
 
 1. Open HACS, then its menu and **Custom repositories**.
 2. Add `https://github.com/simprl/espoid-service-ha` with type **Integration**.
-3. Find **ESPOID Service** and download release `0.1.1`, not the development branch.
+3. Find **ESPOID Service** and download release `0.1.2`, not the development branch.
 4. Restart Home Assistant during an agreed maintenance window. Automations are
    unavailable while HA restarts. Do not update HA or other integrations as part
    of this installation.
@@ -38,6 +42,21 @@ address through integration options when DHCP changes. The old firmware does
 not expose its MAC through HTTP: config entries have stable generated IDs,
 not IP-based IDs, and cannot automatically verify physical device identity.
 Use DHCP reservations and check the board/profile before destructive actions.
+
+The `0.1.2` panel also provides **Find IP** in the device bar. Request Wi-Fi from
+Zigbee2MQTT, open search, confirm the private IPv4 subnet and start. The suggested
+/24 is not a verified mask. HA checks the old IP and nearby addresses first
+(+1, -1, +2, -2), with up to 12 concurrent requests and a 40-second deadline.
+Only port 80 and the read-only `/api/device-config` route are probed. Results
+appear progressively and can be stopped; even one candidate needs explicit
+confirmation. Identical profiles do not identify a physical board: identify it
+independently, or put only the intended board in Wi-Fi at a time.
+
+Selection rereads the profile and updates the same HA entry's address and
+remembered CIDR. ID/name, MQTT topic and library are preserved. Discovery sends
+no ESP write, Wi-Fi hold, reboot or OTA. Selected-device polling/commands pause
+while its search panel is open. Closing resumes normal polling, which can
+confirm pending OTA through the existing status route; discovery never calls it.
 
 The optional Zigbee2MQTT command topic is the complete device `/set` topic,
 including the installation's prefix. The optional **Wi-Fi via Zigbee2MQTT**
@@ -90,8 +109,8 @@ There is no integration self-updater or arbitrary filesystem/proxy endpoint.
 
 ## Scope and translations
 
-This is the ESPOID Service `0.1.1` pilot release. Scoped native HA
-2026.4.4 checks covered both this candidate and its preceding name, with a
+The public ESPOID Service `0.1.1` pilot's scoped native HA
+2026.4.4 checks covered that release and its preceding name, with a
 synthetic HTTP fixture. Panel/config/options, service API, local publication
 and restart persistence passed. Neither result is
 a production release or real-AC qualification. Firmware checkpoints and service timers

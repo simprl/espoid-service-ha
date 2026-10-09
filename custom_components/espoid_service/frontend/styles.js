@@ -24,6 +24,13 @@ dt { color:var(--secondary-text-color,#63716c); } dd { font-variant-numeric:tabu
 .commands button { justify-content:flex-start; } .upload-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
 .notice { padding:12px 14px; margin:0 0 18px; border-left:3px solid #168255; background:var(--card-background-color,#fff); overflow-wrap:anywhere; }
 .notice.error { border-color:#c94848; } pre { max-height:600px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 ui-monospace,monospace; margin:0; }
+.discovery { border-top:1px solid var(--divider-color,#d7dfdb); padding:16px 0; margin:16px 0; }
+h2 { font-size:18px; margin:0 0 16px; } h3 { font-size:14px; margin:16px 0 8px; }
+.discovery input { max-width:360px; } .secondary { color:var(--secondary-text-color,#63716c); font-size:12px; margin:8px 0; }
+#search-progress { min-height:22px; margin:8px 0; } progress { width:100%; height:8px; accent-color:#168255; }
+.candidate { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center; padding:12px 0; border-top:1px solid var(--divider-color,#d7dfdb); }
+.candidate strong,.candidate p { overflow-wrap:anywhere; } .candidate p { font-size:12px; margin:4px 0 0; }
+@media(max-width:600px) { .candidate { grid-template-columns:minmax(0,1fr); } }
 @media(max-width:600px) { header { padding:8px 12px; gap:4px; } h1 { font-size:19px; } main { padding:16px 12px; } .device-bar { gap:8px; } .device-bar label { width:100%; } .connection { width:100%; } nav { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; overflow:visible; } nav button { font-size:12px; padding:10px 4px; white-space:normal; overflow-wrap:anywhere; } dl { grid-template-columns:minmax(115px,1fr) minmax(0,1fr); } dt,dd { padding:9px 5px; } .upload-grid { grid-template-columns:1fr; gap:12px; } .commands { display:grid; grid-template-columns:1fr; } .commands button { width:100%; } }
 @media(prefers-reduced-motion:no-preference) { button { transition:border-color .12s,background-color .12s; } }
 `;

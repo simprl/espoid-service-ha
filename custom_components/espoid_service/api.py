@@ -10,8 +10,9 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.exceptions import HomeAssistantError
 
-from .client import DeviceError
+from .client import DeviceError, local_url
 from .const import API_PREFIX, APP_MAX_BYTES, DOMAIN, PROFILE_MAX_BYTES
+from .discovery import suggested_network, verify_candidate
 
 
 def require_admin(request):
@@ -71,6 +72,7 @@ class DevicesView(HomeAssistantView):
             {"id": key, "name": device.entry.title, "base_url": device.client.origin,
              "mqtt_configured": bool(device.settings.get("mqtt_topic")),
              "firmware_base_url": device.settings.get("firmware_base_url", ""),
+             "discovery_cidr": device.settings.get("discovery_cidr") or suggested_network(device.client.origin),
              "reachable": device.reachable, "checked_at": device.checked_at,
              "status": device.status, "last_action": device.last_action}
             for key, device in self.hass.data[DOMAIN]["devices"].items()]})
@@ -88,7 +90,12 @@ class DeviceView(HomeAssistantView):
         require_admin(request)
         device = runtime(self.hass, entry_id)
         try:
+            search = self.hass.data[DOMAIN].get("discovery")
+            if action == "discovery":
+                return web.json_response(search.snapshot(entry_id), headers={"Cache-Control": "no-store"})
             async with device.client.lock:
+                if search and search.blocks(entry_id):
+                    raise DeviceError("search_busy")
                 if action == "status":
                     result = await refresh(device)
                 elif action == "profile":
@@ -109,8 +116,21 @@ class DeviceView(HomeAssistantView):
         device = runtime(self.hass, entry_id)
         try:
             body = await bounded_json(request)
+            search = self.hass.data[DOMAIN].get("discovery")
             async with device.client.lock:
-                if action == "profile_validate":
+                if action == "discovery_start":
+                    if set(body) != {"cidr"}:
+                        raise DeviceError("invalid_request")
+                    result = search.start(entry_id, device.client.origin, body["cidr"], self.hass.async_create_task)
+                elif action == "discovery_cancel":
+                    if set(body) != {"job_id"} or not isinstance(body["job_id"], str):
+                        raise DeviceError("invalid_request")
+                    result = await search.cancel(entry_id, body["job_id"])
+                elif action == "discovery_apply":
+                    result = await self._apply_address(device, body)
+                elif search and search.blocks(entry_id):
+                    raise DeviceError("search_busy")
+                elif action == "profile_validate":
                     result = await device.client.validate_profile(body.get("profile"))
                 elif action == "profile_store":
                     result = await device.client.store_profile(body.get("profile"))
@@ -138,6 +158,35 @@ class DeviceView(HomeAssistantView):
             return web.json_response(result)
         except DeviceError as err:
             return error_response(err)
+
+    async def _apply_address(self, device, body):
+        if (set(body) != {"job_id", "url", "confirmed"} or body["confirmed"] is not True
+                or not isinstance(body["job_id"], str)):
+            raise DeviceError("invalid_search_selection")
+        entry_id = device.entry.entry_id
+        search = self.hass.data[DOMAIN]["discovery"]
+        job, candidate = search.candidate(entry_id, body["job_id"], body["url"], device.client.origin)
+        await search.cancel(entry_id, job.id)
+        current = await verify_candidate(candidate["url"])
+        # Results can become stale while another admin edits/reloads an entry.
+        search.candidate(entry_id, job.id, candidate["url"], device.client.origin)
+        if (runtime(self.hass, entry_id) is not device
+                or local_url({**device.entry.data, **device.entry.options}["base_url"]) != job.origin):
+            raise DeviceError("search_expired")
+        if current is None or current["fingerprint"] != candidate["fingerprint"]:
+            raise DeviceError("search_candidate_changed")
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if (entry.entry_id != entry_id
+                    and local_url({**entry.data, **entry.options}["base_url"]) == candidate["url"]):
+                raise DeviceError("search_address_conflict")
+        options = {**device.entry.options, "base_url": candidate["url"], "discovery_cidr": job.cidr}
+        # Only HA options change. No ESP command, hold, reboot or OTA is sent.
+        self.hass.config_entries.async_update_entry(device.entry, options=options)
+        device.settings.update(base_url=candidate["url"], discovery_cidr=job.cidr)
+        device.client.origin = candidate["url"]
+        device.status, device.checked_at, device.reachable = None, None, False
+        await search.clear_entry(entry_id)
+        return {"ok": True, "base_url": candidate["url"], "discovery_cidr": job.cidr}
 
     async def _install(self, device, digest):
         library = self.hass.data[DOMAIN]["library"]

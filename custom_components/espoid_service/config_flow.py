@@ -13,6 +13,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import DeviceClient, DeviceError, local_url
 from .const import DOMAIN
+from .discovery import search_network
 
 
 def settings_schema(defaults: dict, *, include_name: bool = False) -> vol.Schema:
@@ -23,6 +24,7 @@ def settings_schema(defaults: dict, *, include_name: bool = False) -> vol.Schema
         vol.Required("base_url", default=defaults.get("base_url", "")): str,
         vol.Optional("firmware_base_url", default=defaults.get("firmware_base_url", "")): str,
         vol.Optional("mqtt_topic", default=defaults.get("mqtt_topic", "")): str,
+        vol.Optional("discovery_cidr", default=defaults.get("discovery_cidr", "")): str,
         vol.Optional("check_connection", default=False): bool,
     })
     return vol.Schema(fields)
@@ -37,6 +39,8 @@ async def validate_settings(hass, data: dict, *, exclude_entry: str | None = Non
                   or re.search(r"[+#\x00-\x1f]", topic)):
         raise DeviceError("invalid_topic")
     result["mqtt_topic"] = topic
+    cidr = data.get("discovery_cidr", "")
+    result["discovery_cidr"] = str(search_network(cidr)) if cidr else ""
     if "name" in result:
         result["name"] = result["name"].strip()
         if not 1 <= len(result["name"]) <= 80:
