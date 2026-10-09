@@ -114,3 +114,9 @@ the release workflow and validation limits are documented in
 The HACS distribution repository is `simprl/espoid-service-ha`. The firmware
 website will be `espoid.com`, but offline-site firmware stays
 in the HA-local library. No cloud connection is required or configured.
+
+## License
+
+This HA integration and its distribution repository are licensed under MIT;
+see `LICENSE`. The component ZIP includes the same notice. This license does
+not apply to the separate ESP firmware source or firmware images.
