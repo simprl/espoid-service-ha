@@ -9,9 +9,11 @@ import re
 import shutil
 import struct
 import tempfile
+import os
+import uuid
 import threading
 
-from .client import DeviceError
+from .client import DeviceError, local_url
 from .const import APP_MAX_BYTES, DOMAIN, FAMILY
 
 HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -80,6 +82,25 @@ class FirmwareLibrary:
                 except DeviceError:
                     continue
         return result
+
+    def publish_node(self, node_id: str, digest: str, base: str) -> dict:
+        from .model import node_id as validate_node
+        validate_node(node_id)
+        base = local_url(base)
+        manifest = self.get(digest)
+        folder = self.root / "nodes" / node_id
+        if (self.root / "nodes").is_symlink() or folder.is_symlink():
+            raise DeviceError("storage_failed")
+        folder.mkdir(parents=True, exist_ok=True)
+        clean = {k:v for k,v in manifest.items() if k != "id"}
+        clean["artifact"] = {**clean["artifact"], "url": f"{base}/local/firmware/{DOMAIN}/{digest}/firmware.bin"}
+        temporary = folder / ("index-" + uuid.uuid4().hex + ".tmp")
+        try:
+            temporary.write_text(json.dumps(clean,indent=2)+"\n",encoding="utf-8")
+            os.replace(temporary, folder / "index.json")
+        finally:
+            temporary.unlink(missing_ok=True)
+        return clean
 
     def import_image(self, manifest: dict, image: bytes) -> dict:
         with self._import_lock:

@@ -1,13 +1,14 @@
 {
-  "domain": "espoid_service",
-  "name": "ESPOID Service",
-  "codeowners": ["@simprl"],
-  "config_flow": true,
-  "dependencies": ["frontend", "http"],
-  "documentation": "https://github.com/simprl/espoid-service-ha",
-  "integration_type": "device",
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/simprl/espoid-service-ha/issues",
-  "requirements": [],
-  "version": "0.1.2"
+  "domain":"espoid_service",
+  "name":"ESPOID Service",
+  "codeowners":["@simprl"],
+  "config_flow":true,
+  "dependencies":["frontend","http","webhook"],
+  "after_dependencies":["mqtt"],
+  "documentation":"https://github.com/simprl/espoid-service-ha",
+  "integration_type":"hub",
+  "iot_class":"local_push",
+  "issue_tracker":"https://github.com/simprl/espoid-service-ha/issues",
+  "requirements":[],
+  "version":"0.2.2"
 }
