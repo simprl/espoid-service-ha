@@ -8,6 +8,7 @@ from aiohttp import web
 from homeassistant.components import frontend, webhook
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.helpers import config_validation as cv
 from .const import DOMAIN,PANEL_PATH,STATIC_PREFIX
 from .client import DeviceError
 from .registry import Registry
@@ -17,6 +18,7 @@ from .sources import Sources
 from .operations import Operations
 
 _LOGGER=logging.getLogger(__name__)
+CONFIG_SCHEMA=cv.config_entry_only_config_schema(DOMAIN)
 
 class Site:
     def __init__(self,hass,entry):

@@ -1,10 +1,10 @@
 {
   "domain":"espoid_service",
   "name":"ESPOID Service",
+  "after_dependencies":["mqtt"],
   "codeowners":["@simprl"],
   "config_flow":true,
   "dependencies":["frontend","http","webhook"],
-  "after_dependencies":["mqtt"],
   "documentation":"https://github.com/simprl/espoid-service-ha",
   "integration_type":"hub",
   "iot_class":"local_push",
