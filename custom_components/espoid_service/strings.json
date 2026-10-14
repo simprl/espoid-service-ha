@@ -88,6 +88,10 @@
   "config_subentries": {
     "node": {
       "entry_type": "Device",
+      "initiate_flow": {
+        "user": "Add device",
+        "reconfigure": "Settings"
+      },
       "step": {
         "user": {
           "title": "Add device",

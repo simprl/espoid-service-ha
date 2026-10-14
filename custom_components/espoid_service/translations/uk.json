@@ -88,6 +88,10 @@
   "config_subentries": {
     "node": {
       "entry_type": "Пристрій",
+      "initiate_flow": {
+        "user": "Додати пристрій",
+        "reconfigure": "Налаштування"
+      },
       "step": {
         "user": {
           "title": "Додати пристрій",
