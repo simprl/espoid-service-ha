@@ -2,16 +2,167 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add ESPOID device",
-        "description": "Register an IO node for maintenance from Home Assistant. Wi-Fi service mode is temporary; ordinary AC control remains in Zigbee2MQTT.",
-        "data": {"name": "Name", "base_url": "Device address", "firmware_base_url": "Home Assistant LAN URL", "mqtt_topic": "Zigbee2MQTT command topic", "discovery_cidr": "Search subnet (CIDR)", "check_connection": "Check HTTP connection now"},
-        "data_description": {"base_url": "Local IPv4 address or http:// address of the ESP.", "firmware_base_url": "Optional. HA URL reachable by the ESP for firmware downloads, for example http://192.168.1.10:8123. Not the VPN address of your computer.", "mqtt_topic": "Optional. Exact device /set topic, including your Zigbee2MQTT prefix.", "discovery_cidr": "Optional private IPv4 subnet, at most 256 addresses. Empty suggests /24 from the last IP; that does not verify the mask. Searches start only from the panel.", "check_connection": "Leave off when the device is in Zigbee mode."}
+        "title": "ESPOID Service",
+        "description": "Sets the shared HA announcement address and this node’s firmware source. Do this once while Wi-Fi is available.",
+        "data": {
+          "firmware_base_url": "HA LAN address for firmware",
+          "search_networks": "Device search networks",
+          "z2m_prefixes": "Z2M bridge topics",
+          "announcement_prefix": "MQTT service topic prefix"
+        },
+        "data_description": {
+          "firmware_base_url": "Address reachable from ESP, e.g. http://192.168.1.10:8123.",
+          "search_networks": "Comma-separated private networks, e.g. 192.168.1.0/24. Used only when you start a search.",
+          "z2m_prefixes": "Optional, comma-separated base topics. Device command topics are derived automatically."
+        }
+      },
+      "reconfigure": {
+        "title": "Settings",
+        "data": {
+          "firmware_base_url": "HA LAN address for firmware",
+          "search_networks": "Device search networks",
+          "z2m_prefixes": "Z2M bridge topics",
+          "announcement_prefix": "MQTT service topic prefix"
+        },
+        "data_description": {
+          "firmware_base_url": "Address reachable from ESP, e.g. http://192.168.1.10:8123.",
+          "search_networks": "Comma-separated private networks, e.g. 192.168.1.0/24. Used only when you start a search.",
+          "z2m_prefixes": "Optional, comma-separated base topics. Device command topics are derived automatically."
+        }
       }
     },
-    "error": {"invalid_url": "Enter a local IPv4 HTTP address without a path, credentials or query.", "invalid_topic": "Enter an exact MQTT topic ending in /set, without wildcards.", "invalid_name": "Enter a name of 1 to 80 characters.", "invalid_search_network": "Enter a private IPv4 subnet with at most 256 addresses, for example 192.168.1.0/24.", "already_configured": "This device address is already registered.", "cannot_connect": "HA cannot reach the device. Switch it to Wi-Fi service mode, or disable the connection check.", "invalid_response": "The device did not return the expected IO-node service status.", "device_rejected": "The device rejected the request.", "response_too_large": "The device response exceeds the service limit."}
+    "error": {
+      "ota_url": "Wi-Fi update",
+      "ota_upload": "Direct upload",
+      "profile_store": "Save profile",
+      "reboot_wifi": "Restart in Wi-Fi",
+      "reboot_zigbee": "Return to Zigbee",
+      "recovery_retry": "Retry recovery",
+      "search_running": "Searching",
+      "search_complete": "Search completed",
+      "search_timeout": "Search time limit reached",
+      "search_cancelled": "Search stopped",
+      "search_failed": "Search failed",
+      "unknown_value": "Not checked",
+      "service_closed": "HTTP not verified · Z2M binding present",
+      "closed_unverified": "Closed without verification",
+      "already_current": "Selected image is already running; download skipped",
+      "identity_mismatch": "The address belongs to a different device.",
+      "invalid_identity": "Invalid device identity.",
+      "unsupported_service": "Update firmware to enable the service API.",
+      "cannot_connect": "HA cannot reach the ESP HTTP service.",
+      "address_unknown": "Device address is unknown.",
+      "already_configured": "This node is already added.",
+      "invalid_search_network": "Select a configured private search network.",
+      "invalid_url": "Enter a private IPv4 HTTP address.",
+      "invalid_topic": "Invalid MQTT topic prefix.",
+      "operation_unresolved": "Resolve the existing operation before issuing another command.",
+      "operation_busy": "Another operation is still running.",
+      "ota_busy": "The ESP is updating or awaiting confirmation.",
+      "ota_not_prepared": "Configure remote updates once while this device is in Wi-Fi.",
+      "firmware_url_required": "Set the HA LAN address in shared settings.",
+      "mqtt_unavailable": "HA MQTT service is unavailable.",
+      "outcome_uncertain": "Connection was interrupted; do not repeat the update automatically.",
+      "publication_failed": "HA firmware publication could not be verified.",
+      "invalid_firmware": "Invalid firmware image, size or SHA-256.",
+      "artifact_mismatch": "The running image marker does not match this operation.",
+      "readback_failed": "Stored value was not verified by readback.",
+      "invalid_request": "Invalid request.",
+      "invalid_name": "Enter a name from 1 to 80 characters.",
+      "node_limit": "The device limit has been reached.",
+      "unknown_node": "Device is no longer registered.",
+      "storage_failed": "Service storage is unavailable.",
+      "invalid_response": "The device returned an invalid response.",
+      "device_rejected": "The device rejected the operation.",
+      "no_diagnostics": "No diagnostic snapshot is available.",
+      "search_busy": "A device search is running.",
+      "search_address_conflict": "Another registered device uses this address.",
+      "search_expired": "Search results have expired.",
+      "operation_failed": "Operation failed.",
+      "response_too_large": "Device response exceeds the permitted size."
+    },
+    "abort": {
+      "already_configured": "This node is already added."
+    }
   },
-  "options": {
-    "step": {"init": {"title": "Device service settings", "data": {"base_url": "Device address", "firmware_base_url": "Home Assistant LAN URL", "mqtt_topic": "Zigbee2MQTT command topic", "discovery_cidr": "Search subnet (CIDR)", "check_connection": "Check HTTP connection now"}, "data_description": {"base_url": "Update after a DHCP address change.", "firmware_base_url": "Optional HA HTTP address reachable by the ESP for local OTA.", "mqtt_topic": "Optional exact /set topic for requesting Wi-Fi via Zigbee2MQTT.", "discovery_cidr": "Optional private IPv4 subnet, at most 256 addresses. Empty suggests /24 from the last IP; that does not verify the mask. Searches start only from the panel.", "check_connection": "Leave off when the device is in Zigbee mode."}}},
-    "error": {"invalid_url": "Enter a local IPv4 HTTP address without a path, credentials or query.", "invalid_topic": "Enter an exact MQTT topic ending in /set, without wildcards.", "invalid_name": "Enter a name of 1 to 80 characters.", "invalid_search_network": "Enter a private IPv4 subnet with at most 256 addresses, for example 192.168.1.0/24.", "already_configured": "This device address is already registered.", "cannot_connect": "HA cannot reach the device. Switch it to Wi-Fi service mode, or disable the connection check.", "invalid_response": "The device did not return the expected IO-node service status.", "device_rejected": "The device rejected the request.", "response_too_large": "The device response exceeds the service limit."}
+  "config_subentries": {
+    "node": {
+      "entry_type": "Device",
+      "initiate_flow": {
+        "user": "Add device",
+        "reconfigure": "Settings"
+      },
+      "step": {
+        "user": {
+          "title": "Add device",
+          "data": {
+            "name": "Name",
+            "base_url": "Service address"
+          }
+        },
+        "reconfigure": {
+          "title": "Settings",
+          "data": {
+            "name": "Name",
+            "base_url": "Service address"
+          }
+        }
+      },
+      "error": {
+        "ota_url": "Wi-Fi update",
+        "ota_upload": "Direct upload",
+        "profile_store": "Save profile",
+        "reboot_wifi": "Restart in Wi-Fi",
+        "reboot_zigbee": "Return to Zigbee",
+        "recovery_retry": "Retry recovery",
+        "search_running": "Searching",
+        "search_complete": "Search completed",
+        "search_timeout": "Search time limit reached",
+        "search_cancelled": "Search stopped",
+        "search_failed": "Search failed",
+        "unknown_value": "Not checked",
+        "service_closed": "HTTP not verified · Z2M binding present",
+        "closed_unverified": "Closed without verification",
+        "already_current": "Selected image is already running; download skipped",
+        "identity_mismatch": "The address belongs to a different device.",
+        "invalid_identity": "Invalid device identity.",
+        "unsupported_service": "Update firmware to enable the service API.",
+        "cannot_connect": "HA cannot reach the ESP HTTP service.",
+        "address_unknown": "Device address is unknown.",
+        "already_configured": "This node is already added.",
+        "invalid_search_network": "Select a configured private search network.",
+        "invalid_url": "Enter a private IPv4 HTTP address.",
+        "invalid_topic": "Invalid MQTT topic prefix.",
+        "operation_unresolved": "Resolve the existing operation before issuing another command.",
+        "operation_busy": "Another operation is still running.",
+        "ota_busy": "The ESP is updating or awaiting confirmation.",
+        "ota_not_prepared": "Configure remote updates once while this device is in Wi-Fi.",
+        "firmware_url_required": "Set the HA LAN address in shared settings.",
+        "mqtt_unavailable": "HA MQTT service is unavailable.",
+        "outcome_uncertain": "Connection was interrupted; do not repeat the update automatically.",
+        "publication_failed": "HA firmware publication could not be verified.",
+        "invalid_firmware": "Invalid firmware image, size or SHA-256.",
+        "artifact_mismatch": "The running image marker does not match this operation.",
+        "readback_failed": "Stored value was not verified by readback.",
+        "invalid_request": "Invalid request.",
+        "invalid_name": "Enter a name from 1 to 80 characters.",
+        "node_limit": "The device limit has been reached.",
+        "unknown_node": "Device is no longer registered.",
+        "storage_failed": "Service storage is unavailable.",
+        "invalid_response": "The device returned an invalid response.",
+        "device_rejected": "The device rejected the operation.",
+        "no_diagnostics": "No diagnostic snapshot is available.",
+        "search_busy": "A device search is running.",
+        "search_address_conflict": "Another registered device uses this address.",
+        "search_expired": "Search results have expired.",
+        "operation_failed": "Operation failed.",
+        "response_too_large": "Device response exceeds the permitted size."
+      },
+      "abort": {
+        "already_configured": "This node is already added.",
+        "node_limit": "The device limit has been reached.",
+        "reconfigure_successful": "Saved"
+      }
+    }
   }
 }

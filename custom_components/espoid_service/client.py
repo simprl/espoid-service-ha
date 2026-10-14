@@ -112,9 +112,10 @@ class DeviceClient:
     async def validate_profile(self, profile: dict) -> dict:
         return await self.request("POST", "/api/device-config/validate", body=profile_json(profile))
 
-    async def store_profile(self, profile: dict) -> dict:
+    async def store_profile(self, profile: dict, *, already_validated: bool = False) -> dict:
         data = profile_json(profile)
-        await self.request("POST", "/api/device-config/validate", body=data)
+        if not already_validated:
+            await self.request("POST", "/api/device-config/validate", body=data)
         result = await self.request("POST", "/api/device-config", body=data)
         readback = await self.profile()
         if readback.get("source") != "stored" or readback.get("config") != profile:

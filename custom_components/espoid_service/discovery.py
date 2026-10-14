@@ -1,10 +1,9 @@
-"""Explicit, bounded legacy HTTP discovery; profiles are not device identity."""
+"""Explicit, bounded discovery by permanent service identity."""
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-import hashlib
 import ipaddress
 import json
 from time import monotonic
@@ -53,47 +52,6 @@ def reject_constant(value):
     raise ValueError("Non-finite JSON")
 
 
-def profile_candidate(data: object, url: str) -> dict | None:
-    if (not isinstance(data, dict) or data.get("ok") is not True
-            or data.get("source") not in ("stored", "default")
-            or type(data.get("requiresReboot")) is not bool
-            or "config" not in data
-            or data.get("zigbeeAction") not in ("none", "reconfigure", "reinterview")):
-        return None
-    profile = data.get("config")
-    if data["source"] == "default":
-        if profile is not None:
-            return None
-        devices, buses = [], []
-    else:
-        if (not isinstance(profile, dict) or type(profile.get("schema")) is not int
-                or profile["schema"] != 1 or not isinstance(profile.get("devices"), list)
-                or len(profile["devices"]) > 64):
-            return None
-        devices, buses = profile["devices"], profile.get("buses", [])
-        if not isinstance(buses, list) or len(buses) > 16:
-            return None
-        if not all(isinstance(item, dict) for item in (*devices, *buses)):
-            return None
-
-    def label(value):
-        if not isinstance(value, str):
-            return ""
-        return "".join(character for character in value[:80] if character.isprintable())
-
-    uart = []
-    for bus in buses:
-        if (bus.get("type") == "uart" and type(bus.get("tx")) is int
-                and type(bus.get("rx")) is int and 0 <= bus["tx"] <= 30
-                and 0 <= bus["rx"] <= 30):
-            uart.append({"tx": bus["tx"], "rx": bus["rx"]})
-    fingerprint = hashlib.sha256(json.dumps(profile, sort_keys=True, ensure_ascii=True,
-                                           separators=(",", ":"), allow_nan=False).encode()).hexdigest()
-    return {"url": url, "source": data["source"],
-            "devices": [{key: label(item.get(key)) for key in ("id", "name", "type")}
-                        for item in devices], "uart": uart, "fingerprint": fingerprint}
-
-
 def search_session():
     # Isolate cookies, auth and proxy configuration from HA's other HTTP clients.
     return aiohttp.ClientSession(cookie_jar=aiohttp.DummyCookieJar(), trust_env=False, auto_decompress=False,
@@ -103,7 +61,9 @@ def search_session():
 
 async def probe(session, url: str) -> dict | None:
     try:
-        async with session.get(url + "/api/device-config", allow_redirects=False) as response:
+        from .service_contract import PATHS
+        from .model import identity
+        async with session.get(url + PATHS["IDENTITY"], allow_redirects=False) as response:
             if response.status != 200:
                 return None
             raw = bytearray()
@@ -111,7 +71,10 @@ async def probe(session, url: str) -> dict | None:
                 if len(raw) + len(chunk) > RESPONSE_BYTES:
                     return None
                 raw.extend(chunk)
-            return profile_candidate(json.loads(raw, parse_constant=reject_constant), url)
+            found=identity(json.loads(raw, parse_constant=reject_constant))
+            return {"url":url,**found}
+    except DeviceError:
+        return None
     except (aiohttp.ClientError, TimeoutError, ValueError, TypeError, RecursionError):
         return None
 
