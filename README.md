@@ -18,7 +18,7 @@ extract the release asset into `custom_components/espoid_service`.
    Zigbee2MQTT converter and update the ESPs through Service 0.2.2 first. Verify
    that they return to Zigbee and report climate data. The qualified migration
    image is `0x00010117`.
-3. Update the existing integration to **0.3.0** in HACS and restart Home Assistant.
+3. Update the existing integration to the latest release in HACS and restart Home Assistant.
    Keep the existing integration entry and device records.
 4. Set the Home Assistant URL reachable from the ESP devices in Service settings.
    For a previously registered node, use **Connections → Bind** to authorize the
