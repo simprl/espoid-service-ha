@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import re
-from .client import DeviceError, local_url
+from .domain.errors import DeviceError
+from .domain.address_policy import validate_local_origin as local_url
 from .service_contract import NODE_PATTERN, SERVICE_VERSION
-from .discovery import search_network
+from .domain.settings_policy import normalize_settings as settings, validate_topic_prefix as topic_prefix
 
 
 def node_id(value):
@@ -13,29 +14,10 @@ def node_id(value):
     return value
 
 
-def topic_prefix(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_/-]{0,127}", value) or value.endswith("/"):
-        raise DeviceError("invalid_topic")
-    return value
-
-
 def ieee(value):
     if not isinstance(value, str) or not re.fullmatch(r"0x[0-9a-f]{16}", value):
         raise DeviceError("invalid_identity")
     return value
-
-
-def settings(data):
-    networks = data.get("search_networks", [])
-    prefixes = data.get("z2m_prefixes", [])
-    if isinstance(networks, str): networks = [v.strip() for v in networks.split(",") if v.strip()]
-    if isinstance(prefixes, str): prefixes = [v.strip() for v in prefixes.split(",") if v.strip()]
-    if not isinstance(networks, list) or len(networks) > 16 or not isinstance(prefixes, list) or len(prefixes) > 8:
-        raise DeviceError("invalid_request")
-    return {"search_networks": list(dict.fromkeys(str(search_network(v)) for v in networks)),
-            "z2m_prefixes": list(dict.fromkeys(topic_prefix(v) for v in prefixes)),
-            "announcement_prefix": topic_prefix(data.get("announcement_prefix", "espoid")),
-            "firmware_base_url": local_url(data["firmware_base_url"]) if data.get("firmware_base_url") else ""}
 
 
 def identity(value):

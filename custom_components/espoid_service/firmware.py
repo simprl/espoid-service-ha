@@ -13,8 +13,10 @@ import os
 import uuid
 import threading
 
-from .client import DeviceError, local_url
+from .domain.errors import DeviceError
+from .domain.address_policy import validate_local_origin as local_url
 from .const import APP_MAX_BYTES, DOMAIN, FAMILY
+from .domain.firmware_variant_policy import validate_variant
 
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 VERSION_HEX = re.compile(r"0x[0-9a-fA-F]{8}\Z")
@@ -33,9 +35,37 @@ def validate_image(manifest: dict, image: bytes) -> dict:
             raise DeviceError("invalid_firmware")
     except (KeyError, TypeError, AttributeError, struct.error) as err:
         raise DeviceError("invalid_firmware") from err
-    return {"family": FAMILY, "version": manifest["version"].lower(),
+    variant = image_variant(image)
+    if manifest.get("variant") != variant:
+        raise DeviceError("invalid_firmware")
+    if variant is not None and (image[48:59] != (manifest["version"].lower() + "\0").encode()
+        or image[80:97] != b"esp32_c6_io_node\0"):
+        raise DeviceError("invalid_firmware")
+    return {"family": FAMILY, "version": manifest["version"].lower(), "variant": variant,
             "channel": str(manifest.get("channel", "operator"))[:40],
             "artifact": {"file": "firmware.bin", "size": len(image), "sha256": digest}}
+
+
+def image_variant(image):
+    offset = 288
+    if image[offset:offset+16] != b'ESPOID-VARIANT1\0':
+        return None
+    if len(image) < offset + 512 or struct.unpack_from('<I', image, 28)[0] < 768:
+        raise DeviceError('invalid_firmware')
+    raw = image[offset+16:offset+512]
+    end = raw.find(b'\0')
+    if end < 0 or any(raw[end:]):
+        raise DeviceError('invalid_firmware')
+    try:
+        def unique(pairs):
+            output = {}
+            for key, value in pairs:
+                if key in output: raise ValueError()
+                output[key] = value
+            return output
+        return validate_variant(json.loads(raw[:end], object_pairs_hook=unique))
+    except (ValueError, UnicodeError):
+        raise DeviceError('invalid_firmware') from None
 
 
 class FirmwareLibrary:

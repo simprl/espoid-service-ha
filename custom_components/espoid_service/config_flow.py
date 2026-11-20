@@ -5,13 +5,14 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import DOMAIN, MAX_NODES
-from .client import DeviceError
+from .domain.errors import DeviceError
 from .model import settings, node_settings
-from .service_client import ServiceClient
+from .infrastructure.devices.identity_client import IdentityClient
 
 
 def site_schema(defaults):
     return vol.Schema({vol.Optional("firmware_base_url", default=defaults.get("firmware_base_url", "")):str,
+        vol.Optional("service_base_url", default=defaults.get("service_base_url", "")):str,
         vol.Optional("search_networks", default=", ".join(defaults.get("search_networks", []))):str,
         vol.Optional("z2m_prefixes", default=", ".join(defaults.get("z2m_prefixes", []))):str,
         vol.Optional("announcement_prefix", default=defaults.get("announcement_prefix", "espoid")):str})
@@ -53,7 +54,7 @@ class NodeSubentryFlow(config_entries.ConfigSubentryFlow):
         if len(entry.subentries) >= MAX_NODES: return self.async_abort(reason="node_limit")
         if user_input is not None:
             try:
-                client = ServiceClient(async_get_clientsession(self.hass), user_input["base_url"])
+                client = IdentityClient(async_get_clientsession(self.hass), user_input["base_url"])
                 found = await client.identity()
                 if any(s.unique_id == found["node_id"] for s in entry.subentries.values()):
                     return self.async_abort(reason="already_configured")
@@ -70,7 +71,7 @@ class NodeSubentryFlow(config_entries.ConfigSubentryFlow):
             try:
                 data = node_settings({**sub.data, **user_input})
                 if data["base_url"]:
-                    await ServiceClient(async_get_clientsession(self.hass),data["base_url"]).verify(sub.unique_id)
+                    await IdentityClient(async_get_clientsession(self.hass),data["base_url"]).verify(sub.unique_id)
                 return self.async_update_and_abort(entry,sub,data=data,title=data["name"])
             except DeviceError as err: errors["base"] = err.code
         return self.async_show_form(step_id="reconfigure",data_schema=vol.Schema({
