@@ -12,28 +12,15 @@ import uuid
 
 import aiohttp
 
-from .client import DeviceError, local_url
+from .domain.errors import DeviceError
+from .domain.address_policy import validate_local_origin as local_url
+from .domain.address_policy import validate_search_network as search_network
 
 CONCURRENCY = 12
 REQUEST_SECONDS = 1.5
 SCAN_SECONDS = 40
 RESULT_SECONDS = 120
 RESPONSE_BYTES = 8192
-PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
-    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
-
-
-def search_network(value: str) -> ipaddress.IPv4Network:
-    try:
-        if not isinstance(value, str) or len(value) > 32 or "/" not in value:
-            raise ValueError()
-        network = ipaddress.ip_network(value.strip(), strict=False)
-        if (network.version != 4 or network.num_addresses > 256
-                or not any(network.subnet_of(private) for private in PRIVATE_NETWORKS)):
-            raise ValueError()
-        return network
-    except (ValueError, TypeError):
-        raise DeviceError("invalid_search_network") from None
 
 
 def suggested_network(origin: str) -> str:
@@ -101,8 +88,10 @@ class SearchJob:
 class DiscoveryManager:
     """One job for all entries; short-lived RAM results and no startup scans."""
 
-    def __init__(self):
+    def __init__(self, changed=None):
         self.job: SearchJob | None = None
+        self.changed = changed or (lambda: None)
+        self.expiry = None
 
     @property
     def active(self):
@@ -111,7 +100,7 @@ class DiscoveryManager:
     def blocks(self, entry_id):
         return self.active and self.job.entry_id == entry_id
 
-    def _valid(self, entry_id, job_id=None):
+    def require_job(self, entry_id, job_id=None):
         job = self.job
         if (job is None or job.entry_id != entry_id or (job_id is not None and job.id != job_id)
                 or (job.state != "running" and monotonic() >= job.expires_at)):
@@ -120,7 +109,7 @@ class DiscoveryManager:
 
     def snapshot(self, entry_id):
         try:
-            job = self._valid(entry_id)
+            job = self.require_job(entry_id)
         except DeviceError:
             return {"job": None, "busy": self.active}
         return {"busy": self.active, "job": {
@@ -134,6 +123,8 @@ class DiscoveryManager:
         if self.active:
             raise DeviceError("search_busy")
         hosts = ordered_hosts(network, origin)
+        if self.expiry:
+            self.expiry.cancel()
         job = SearchJob(entry_id, origin, str(network), len(hosts))
         self.job = job
         coroutine = self._run(job, hosts)
@@ -143,6 +134,7 @@ class DiscoveryManager:
             coroutine.close()
             self.job = None
             raise DeviceError("search_failed") from None
+        self.changed()
         return self.snapshot(entry_id)
 
     async def _run(self, job, hosts):
@@ -155,6 +147,7 @@ class DiscoveryManager:
                     job.checked += 1
                     if candidate is not None:
                         job.candidates[candidate["url"]] = candidate
+                    self.changed()
 
                 # Complete the former IP first. Remaining workers consume the
                 # nearest-first queue; results stream without awaiting a batch.
@@ -183,23 +176,23 @@ class DiscoveryManager:
         except Exception:
             job.state = "failed"
         finally:
-            job.expires_at = monotonic() + RESULT_SECONDS
+            self._finished(job)
 
     def candidate(self, entry_id, job_id, url, origin):
-        job = self._valid(entry_id, job_id)
+        job = self.require_job(entry_id, job_id)
         if job.origin != origin or not isinstance(url, str) or url not in job.candidates:
             raise DeviceError("invalid_search_selection")
         return job, job.candidates[url]
 
     async def cancel(self, entry_id, job_id=None):
-        job = self._valid(entry_id, job_id)
+        job = self.require_job(entry_id, job_id)
         if job.task is not None and not job.task.done():
             job.task.cancel()
             await asyncio.gather(job.task, return_exceptions=True)
             # Cancellation before the task's first instruction still expires.
             if job.state == "running":
                 job.state = "cancelled"
-                job.expires_at = monotonic() + RESULT_SECONDS
+                self._finished(job)
         return self.snapshot(entry_id)
 
     async def clear_entry(self, entry_id):
@@ -207,8 +200,19 @@ class DiscoveryManager:
             if self.active:
                 await self.cancel(entry_id)
             self.job = None
+            if self.expiry:
+                self.expiry.cancel()
 
     async def shutdown(self, event=None):
         if self.active:
             await self.cancel(self.job.entry_id)
         self.job = None
+        if self.expiry:
+            self.expiry.cancel()
+
+    def _finished(self, job):
+        job.expires_at = monotonic() + RESULT_SECONDS
+        if self.expiry:
+            self.expiry.cancel()
+        self.expiry = asyncio.get_running_loop().call_later(RESULT_SECONDS, self.changed)
+        self.changed()
