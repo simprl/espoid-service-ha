@@ -13,6 +13,8 @@ from ..domain.binding_policy import binding_key
 from ..service_support import service_support
 from .tracked_task import run_tracked_task
 
+SERVICE_MODES = {"service_mode_read": "read", "service_enter": "service", "service_exit": "normal"}
+
 
 class ConnectionsResource:
     def __init__(self, registry, sources, bindings, network, enrollment, membership, profiles, notify,
@@ -25,6 +27,8 @@ class ConnectionsResource:
         self.pending, self.errors, self.tasks = set(), {}, set()
         self.stopped = False
         self.published = {}
+        self.control = None
+        self.control_busy = lambda _: False
         bindings.changed = network.changed = self.changed
         sources.changed = self.changed
 
@@ -55,7 +59,7 @@ class ConnectionsResource:
             self.notify({"entity": "connection", "id": identifier, "version": self.version})
 
     async def execute(self, identifier, action, body, request_id):
-        if action == "rebind" and body.get("confirmed") is not True:
+        if action in ("rebind", "service_enter", "service_exit") and body.get("confirmed") is not True:
             raise DeviceError("invalid_request")
         if self.stopped or identifier in self.pending:
             raise DeviceError("operation_busy")
@@ -90,12 +94,28 @@ class ConnectionsResource:
             # not cached as readiness without a matching lifecycle notification.
             busy = identifier in self.pending
             network_busy = bool(job and job["state"] not in ("done", "failed"))
+            binding = bindings.get(key)
+            known = self.registry.nodes.get(binding['node_id']) if binding else None
+            active = bool(binding and binding.get('state') == 'active')
+            status = None
+            if active and known and known.status:
+                bound_at, observed_at = binding.get('checked_at'), getattr(known, 'checked_at', None)
+                if not bound_at or observed_at and observed_at >= bound_at:
+                    status = known.status.get('service_mode')
+            mode = ('service' if status else 'normal') if type(status) is bool else candidate.get('service_mode')
+            mode_supported = support.get('mode') is True
+            mode_probe = mode_supported or (candidate.get('service_mode_converter') is True and
+                                             support['reason'] == 'service_capabilities_unknown')
+            mode_ready = mode_probe and not busy and not network_busy and (
+                not active or bool(known and self.control and not self.control_busy(known.node_id) and
+                                   not self.registry.active(known.node_id)))
             rows.append({
                 "id": identifier, "kind": "zigbee", "name": candidate["name"],
                 "prefix": candidate["prefix"], "ieee": candidate["ieee"],
                 "admin_url": str(candidate.get("admin_url") or ""),
                 "support": {field: support.get(field) for field in ("binding", "network", "reason")},
-                "binding": bindings.get(key), "network": deepcopy(job),
+                "binding": binding, "network": deepcopy(job),
+                "service_mode": mode if mode_supported else None, "service_mode_available": mode_probe,
                 "service_url": self.registry.settings.get("service_base_url", ""),
                 "error": self.errors.get(identifier),
                 "actions": {
@@ -107,6 +127,9 @@ class ConnectionsResource:
                     "configure": bool(not busy and support["network"] and not network_busy),
                     "read": bool(not busy and support["network"]),
                     "start": bool(not busy and support["network"] and job and job["state"] == "ready"),
+                    "service_mode_read": mode_ready,
+                    "service_enter": mode_supported and mode_ready and mode == 'normal',
+                    "service_exit": mode_supported and mode_ready and mode == 'service',
                 },
             })
         for key, announcement in self.sources.announcements.items():
@@ -142,7 +165,14 @@ class ConnectionsResource:
         identifier = row["id"]
         try:
             node = self._node(row)
-            if node and action != "connect":
+            if action in SERVICE_MODES and (row.get('binding') or {}).get('state') == 'active':
+                if not node or not self.control:
+                    raise DeviceError('binding_missing')
+                if action == 'service_mode_read':
+                    await self.control('status', node.node_id, 'refresh', {})
+                else:
+                    await self.control('control', node.node_id, action, {'confirmed': True})
+            elif node and action != "connect":
                 async with node.lock:
                     if self.registry.active(node.node_id) or self.profiles.busy(node.node_id):
                         raise DeviceError("operation_unresolved")
@@ -202,6 +232,9 @@ class ConnectionsResource:
                 await self.membership.add_bound(candidate, result["binding"])
         elif action == "wake":
             await self.sources.command(target, "switch_to_wifi")
+        elif action in SERVICE_MODES:
+            mode = await self.sources.service_mode(target, SERVICE_MODES[action])
+            self.sources.candidate(target)['service_mode'] = mode
         elif action == "configure":
             await self.network.submit(target, body, request_id, self.registry.settings.get("service_base_url", ""))
         else:

@@ -55,7 +55,7 @@ class Site:
         create_resource_task=partial(entry.async_create_background_task,hass,
             name="ESPOID resource",eager_start=False)
         self.registry=Registry(hass,entry,HaRegistryStorage(hass,entry))
-        self.registry.changed=lambda event:hass.bus.async_fire(RESOURCE_EVENT,event)
+        self.registry.changed=self.registry_changed
         self.membership=DeviceMembershipService(self.registry,HaMembership(hass,entry),
             client_factory=lambda origin: IdentityClient(async_get_clientsession(hass),origin),now=timestamp)
         self.sources=Sources(hass,self.registry,self.membership)
@@ -89,18 +89,34 @@ class Site:
             lambda event:hass.bus.async_fire(RESOURCE_EVENT,event),create_task=create_resource_task)
         self.resources=DeviceResources(HaDeviceResources(hass,entry),self.registry,self.maintenance,
             self.library,self.device_status,self.profiles,self.maintenance.files,hass.async_add_executor_job,
-            lambda event:hass.bus.async_fire(RESOURCE_EVENT,event),equipment=EquipmentChannel(hass,self.bindings),create_task=create_resource_task)
+            self.device_resource_changed,equipment=EquipmentChannel(hass,self.bindings),create_task=create_resource_task)
         self.bindings.transition_busy=lambda node_id:bool(self.registry.active(node_id) or self.profiles.busy(node_id)
             or any(records.get(node_id,{}).get('pending') for records in self.resources.records.values()))
-        self.device_status.observed=self.resources.observe
+        self.connections.control=self.resources.command
+        self.connections.control_busy=lambda node_id: any(
+            self.resources.records[entity].get(node_id, {}).get('pending') for entity in ('status', 'control'))
+        self.device_status.observed=self.observe_device_status
         self.maintenance.observed=self.observe_machine
         self.resources.sources, self.resources.discovery = self.sources, self.discovery
         self.membership_commands=MembershipCommands(self.registry,self.membership,self.profiles,self.resources,
             self.discovery,self.membership_lock,create_task=hass.async_create_task)
         self.source_settings=None
 
-    async def observe_machine(self,node):
+    def registry_changed(self, event):
+        self.hass.bus.async_fire(RESOURCE_EVENT, event)
+        self.connections.changed()
+
+    def device_resource_changed(self, event):
+        self.hass.bus.async_fire(RESOURCE_EVENT, event)
+        if event['entity'] in ('status', 'control'):
+            self.connections.changed()
+
+    async def observe_device_status(self,node):
         await self.resources.observe(node)
+        self.connections.changed()
+
+    async def observe_machine(self,node):
+        await self.observe_device_status(node)
         await self.profiles.reconcile(node)
         await self.resources.reconcile(node)
 

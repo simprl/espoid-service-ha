@@ -36,6 +36,8 @@ def service_support(candidate):
             'network': reason is None and (bits & 3) == 3,
             'machine': reason is None and (bits & 5) == 5,
             'resources': reason is None and (bits & 13) == 13,
+            'mode': reason is None and bool(bits & 0x10) and (
+                candidate.get('service_mode_converter') is True or candidate.get('service_mode_observed') is True),
             'reason': reason or (None if bits & 1 else 'service_unsupported')}
 
 

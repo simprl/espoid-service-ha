@@ -1,7 +1,7 @@
 """Constants for the existing IO-node service API, not the future gateway API."""
 
 DOMAIN = "espoid_service"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 PANEL_PATH = "espoid-service"
 API_PREFIX = f"/api/{DOMAIN}"
 STATIC_PREFIX = f"/{DOMAIN}-static/{VERSION}"
