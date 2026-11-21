@@ -2,6 +2,8 @@
 from __future__ import annotations
 import asyncio
 import json
+import re
+import secrets
 from homeassistant.core import callback
 from .domain.errors import DeviceError
 from .model import ieee, node_id, topic_prefix
@@ -59,10 +61,16 @@ class Sources:
                 converter=isinstance(exposes,list) and any(isinstance(e,dict) and
                     e.get('property')=='service_capabilities' and type(e.get('access')) is int and
                     e['access'] & 5 == 5 for e in exposes[:256])
+                mode_converter = isinstance(exposes, list) and any(isinstance(e, dict) and
+                    e.get('property') == 'service_mode' and type(e.get('access')) is int and
+                    e['access'] & 5 == 5 for e in exposes[:256])
+                same_version = previous.get('firmware_version') == version
                 candidate={"prefix":prefix,"ieee":address,"name":name,
                     "admin_url":previous.get("admin_url",""), 'firmware_version':version,
                     'service_converter':converter, 'service_capabilities':previous.get('service_capabilities')
-                    if previous.get('firmware_version')==version else None}
+                    if same_version else None, 'service_mode_converter':mode_converter,
+                    'service_mode_observed':bool(same_version and previous.get('service_mode_observed')),
+                    'service_mode':previous.get('service_mode') if same_version else None}
                 candidate['service_support']=service_support(candidate)
                 found[prefix+":"+address]=candidate
             self.catalog={k:v for k,v in self.catalog.items() if v["prefix"]!=prefix}|found
@@ -80,10 +88,21 @@ class Sources:
                 if message.topic==candidate["prefix"]+"/"+candidate["name"]:
                     version=value.get('firmware_id')
                     if isinstance(version,str) and len(version)<=32 and version!=candidate.get('firmware_version'):
-                        candidate.update(firmware_version=version,service_capabilities=None)
+                        candidate.update(firmware_version=version,service_capabilities=None,service_mode=None,
+                                         service_mode_observed=False)
                     bits=value.get('service_capabilities')
                     if type(bits) is int and 0<=bits<=255: candidate['service_capabilities']=bits
+                    mode = value.get('service_mode')
+                    if (not getattr(message, 'retain', False) and mode in ('service', 'normal') and
+                            type(bits) is int and 0 <= bits <= 255 and bits & 0x10 and
+                            not candidate.get('service_mode_observed')):
+                        candidate['service_mode_observed'] = True
+                        changed = True
                     candidate['service_support']=service_support(candidate)
+                    if candidate['service_support']['mode'] and mode in ('service', 'normal'):
+                        if mode != candidate.get('service_mode'):
+                            candidate['service_mode'] = mode
+                            changed = True
                     if before[:2]!=(candidate.get('firmware_version'),candidate.get('service_capabilities')):changed=True
                 if message.topic==candidate["prefix"]+"/"+candidate["name"] and value.get("admin_url"):
                     previous=candidate["admin_url"]
@@ -179,6 +198,44 @@ class Sources:
             from homeassistant.exceptions import HomeAssistantError
             if isinstance(err,HomeAssistantError): raise DeviceError("outcome_uncertain") from err
             raise
+
+    async def service_mode(self, binding, target):
+        from homeassistant.components import mqtt
+
+        candidate = await self.service_candidate(binding, 'mode')
+        if self.stopped or not self.hass.services.has_service('mqtt', 'publish'):
+            raise DeviceError('mqtt_unavailable')
+        topic = candidate['prefix'] + '/' + candidate['name']
+        request_id = secrets.token_hex(16)
+        result = asyncio.get_running_loop().create_future()
+
+        @callback
+        def receive(message):
+            if result.done() or getattr(message, 'retain', False):
+                return
+            try:
+                value = self.decode(message)
+            except DeviceError:
+                return
+            status = value.get('service_mode_result') if isinstance(value, dict) else None
+            if not isinstance(status, dict) or status.get('id') != request_id:
+                return
+            mode, boot = status.get('mode'), status.get('boot_id')
+            if (mode in ('normal', 'service') and (target == 'read' or mode == target) and
+                    isinstance(boot, str) and re.fullmatch(r'[a-f0-9]{16}', boot)):
+                result.set_result(mode)
+
+        unsubscribe = await mqtt.async_subscribe(self.hass, topic, receive)
+        try:
+            async with asyncio.timeout(60):
+                await mqtt.async_publish(self.hass, topic + '/set', json.dumps({'service_mode_request': {
+                    'id': request_id, 'target': target,
+                }}), qos=0, retain=False)
+                return await result
+        except TimeoutError:
+            raise DeviceError('outcome_uncertain' if target != 'read' else 'request_not_delivered') from None
+        finally:
+            unsubscribe()
 
     async def stop(self):
         self.stopped=True

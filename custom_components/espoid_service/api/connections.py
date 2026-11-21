@@ -36,7 +36,8 @@ class ConnectionView(View):
             if action == "offer":
                 only(body, ("reset",), ())
                 return self.site.mqtt_enrollment.create(connection_id, request["hass_user"].id, reset=body.get("reset", False))
-            fields = ("expected_revision",) if action == "start" else ("confirmed",) if action == "rebind" else ()
+            fields = ("expected_revision",) if action == "start" else (
+                ("confirmed",) if action in ("rebind", "service_enter", "service_exit") else ())
             only(body, fields, fields)
             return await self.site.connections.execute(connection_id, action, body, request.headers.get("X-ESPOID-Request-ID"))
 
@@ -64,5 +65,6 @@ class ConnectionView(View):
             except DeviceError as error:
                 return error_response(error)
         return await self.json_command(request, action=action,
-            actions=("bind", "rebind", "refresh", "wake", "connect", "read", "start", "offer"),
+            actions=("bind", "rebind", "refresh", "wake", "connect", "read", "start", "offer",
+                     "service_mode_read", "service_enter", "service_exit"),
             scope="connections/" + connection_id + "/" + action, execute=execute)

@@ -10,6 +10,14 @@ Add this repository in HACS as a custom repository of type **Integration**.
 Download ESPOID Service and restart Home Assistant. For a manual installation,
 extract the release asset into `custom_components/espoid_service`.
 
+### Zigbee Service mode in 0.3.2
+
+In **Connections**, read the device mode, then enter Service mode or return
+to normal operation directly over Zigbee. Use firmware and an ESPOID
+converter that support mode switching (bench-tested on Haier firmware
+`0x00010119` with the matching converter). Existing Service bindings carry
+over. Firmware and the converter are updated separately.
+
 ### Upgrade from 0.2.2
 
 1. Create a Home Assistant backup. Save the Zigbee2MQTT configuration if you use it.
